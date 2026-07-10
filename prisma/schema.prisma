@@ -1,0 +1,618 @@
+// SocialConnect AI Marketing Automation Platform - Database Schema
+// Production-ready, scalable design with full audit trails
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// AUTHENTICATION & USER MANAGEMENT
+// ============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  avatar        String?
+  password      String    // hashed
+  role          UserRole  @default(VIEWER)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      SocialAccount[]
+  posts         Post[]
+  campaigns     Campaign[]
+  media         Media[]
+  apiKeys       ApiKey[]
+  auditLogs     AuditLog[]
+  settings      UserSettings[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  EDITOR
+  VIEWER
+}
+
+// ============================================================
+// SOCIAL ACCOUNTS
+// ============================================================
+
+model SocialAccount {
+  id              String         @id @default(cuid())
+  userId          String
+  platform        Platform       @map("platform")
+  platformId      String         // Account ID on the platform
+  username        String?
+  displayName     String?
+  avatar          String?
+  accessToken     String         // encrypted
+  refreshToken    String?        // encrypted
+  tokenExpiresAt  DateTime?
+  isActive        Boolean        @default(true)
+  autoPublish     Boolean        @default(false)
+  followers       Int            @default(0)
+  following       Int            @default(0)
+  metadata        String?        // JSON string for extra platform data
+  lastSyncedAt    DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts           PostAccount[]
+  analytics       AccountAnalytics[]
+
+  @@unique([platform, platformId])
+  @@map("social_accounts")
+}
+
+enum Platform {
+  FACEBOOK_PAGE
+  FACEBOOK_GROUP
+  INSTAGRAM
+  THREADS
+  TWITTER
+  PINTEREST
+  LINKEDIN
+  TIKTOK
+  YOUTUBE
+  TELEGRAM
+  WHATSAPP
+  SHOPIFY
+  WORDPRESS
+  WOOCOMMERCE
+  CUSTOM_API
+}
+
+// ============================================================
+// MEDIA & IMAGE MANAGEMENT
+// ============================================================
+
+model Media {
+  id              String      @id @default(cuid())
+  userId          String
+  originalUrl     String?
+  originalName    String?
+  mimeType        String?
+  fileSize        Int?
+  width           Int?
+  height          Int?
+  altText         String?
+  // AI Analysis results
+  aiDescription   String?     // JSON: AI-generated description
+  aiTags          String?     // JSON: AI-generated tags
+  aiCategory      String?
+  aiNiche         String?
+  aiAudience      String?
+  aiQuality       String?     // JSON: quality analysis
+  // Enhanced versions
+  enhancedUrl     String?
+  enhancedWide    String?     // enhanced versions for diff platforms
+  croppedSquare   String?
+  brandedUrl      String?
+  // Processing status
+  status          MediaStatus @default(PENDING)
+  processingLog   String?     // JSON processing log
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postMedia       PostMedia[]
+
+  @@map("media")
+}
+
+enum MediaStatus {
+  PENDING
+  ANALYZING
+  ENHANCING
+  COMPLETED
+  FAILED
+}
+
+// ============================================================
+// POSTS & CONTENT
+// ============================================================
+
+model Post {
+  id              String        @id @default(cuid())
+  userId          String
+  campaignId      String?
+  title           String?
+  // Generated content variants
+  captionDefault  String?
+  captionProfessional String?
+  captionFriendly String?
+  captionLuxury   String?
+  captionEmoji    String?
+  // Platform-specific content
+  facebookContent String?
+  instagramContent String?
+  linkedinContent String?
+  twitterContent  String?
+  pinterestContent String?
+  threadsContent  String?
+  // SEO content
+  seoTitle        String?
+  metaDescription String?
+  productDescription String?
+  ctaText         String?
+  // Hashtags
+  hashtags        String?      // JSON: array of hashtags
+  hashtagStrategy String?      // JSON: high/medium/niche/local/global breakdown
+  // Status & Scheduling
+  status          PostStatus    @default(DRAFT)
+  approvalStatus  ApprovalStatus @default(PENDING)
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  // Scheduling
+  scheduledAt     DateTime?
+  publishedAt     DateTime?
+  timezone        String?       @default("UTC")
+  isRecurring     Boolean       @default(false)
+  recurringRule   String?       // JSON: cron-like rule
+  // AI metadata
+  aiModel         String?
+  aiTokensUsed    Int?
+  aiCost          Float?
+  aiConfidence    Float?
+  // Analytics
+  totalReach      Int           @default(0)
+  totalImpressions Int          @default(0)
+  totalClicks     Int           @default(0)
+  totalLikes      Int           @default(0)
+  totalComments   Int           @default(0)
+  totalShares     Int           @default(0)
+  engagementRate  Float         @default(0)
+  // Trend data
+  trendKeywords   String?       // JSON
+  trendScore      Float?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign        Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  postAccounts    PostAccount[]
+  postMedia       PostMedia[]
+  postAnalytics   PostAnalytics[]
+  aiLogs          AiLog[]
+
+  @@map("posts")
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  ARCHIVED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NEEDS_REVISION
+}
+
+// Post-Platform many-to-many
+model PostAccount {
+  id            String        @id @default(cuid())
+  postId        String
+  accountId     String
+  platformPostId String?      // ID returned by the platform after publishing
+  platformUrl   String?       // URL of the published post
+  status        PostStatus    @default(DRAFT)
+  publishedAt   DateTime?
+  errorMessage  String?
+  createdAt     DateTime      @default(now())
+
+  post          Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  account       SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, accountId])
+  @@map("post_accounts")
+}
+
+// Post-Media many-to-many
+model PostMedia {
+  id        String   @id @default(cuid())
+  postId    String
+  mediaId   String
+  position  Int      @default(0)  // order in the post
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  media     Media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, mediaId])
+  @@map("post_media")
+}
+
+// ============================================================
+// CAMPAIGNS
+// ============================================================
+
+model Campaign {
+  id          String          @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  objective   CampaignObjective?
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Float?
+  currency    String?         @default("USD")
+  status      CampaignStatus  @default(DRAFT)
+  tags        String?         // JSON: campaign tags
+  targetAudience String?      // JSON: audience definition
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts       Post[]
+  analytics   CampaignAnalytics[]
+
+  @@map("campaigns")
+}
+
+enum CampaignObjective {
+  AWARENESS
+  ENGAGEMENT
+  TRAFFIC
+  CONVERSIONS
+  LEAD_GENERATION
+  SALES
+  BRAND_LOYALTY
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+// ============================================================
+// ANALYTICS
+// ============================================================
+
+model PostAnalytics {
+  id            String   @id @default(cuid())
+  postId        String
+  accountId     String?
+  date          DateTime
+  reach         Int      @default(0)
+  impressions   Int      @default(0)
+  clicks        Int      @default(0)
+  likes         Int      @default(0)
+  comments      Int      @default(0)
+  shares        Int      @default(0)
+  saves         Int      @default(0)
+  ctr           Float    @default(0)
+  engagementRate Float   @default(0)
+  followers     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  post          Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("post_analytics")
+}
+
+model AccountAnalytics {
+  id            String        @id @default(cuid())
+  accountId     String
+  date          DateTime
+  followers     Int           @default(0)
+  following     Int           @default(0)
+  posts         Int           @default(0)
+  reach         Int           @default(0)
+  impressions   Int           @default(0)
+  engagement    Float         @default(0)
+  topHashtags   String?       // JSON
+  topPostTime   String?       // best posting time
+  createdAt     DateTime      @default(now())
+
+  account       SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("account_analytics")
+}
+
+model CampaignAnalytics {
+  id            String   @id @default(cuid())
+  campaignId    String
+  date          DateTime
+  totalReach    Int      @default(0)
+  totalImpressions Int   @default(0)
+  totalClicks   Int      @default(0)
+  totalConversions Int   @default(0)
+  totalSpend    Float    @default(0)
+  ctr           Float    @default(0)
+  conversionRate Float   @default(0)
+  roi           Float    @default(0)
+  createdAt     DateTime @default(now())
+
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("campaign_analytics")
+}
+
+// ============================================================
+// AI & AUTOMATION LOGS
+// ============================================================
+
+model AiLog {
+  id            String    @id @default(cuid())
+  postId        String?
+  userId        String
+  agent         AiAgent
+  model         String
+  prompt        String?   // truncated for security
+  response      String?   // truncated
+  tokensInput   Int?
+  tokensOutput  Int?
+  cost          Float?
+  latencyMs     Int?
+  success       Boolean   @default(true)
+  errorMessage  String?
+  metadata      String?   // JSON extra data
+  createdAt     DateTime  @default(now())
+
+  post          Post?     @relation(fields: [postId], references: [id], onDelete: SetNull)
+
+  @@map("ai_logs")
+}
+
+enum AiAgent {
+  MARKETING
+  SEO
+  HASHTAG
+  TREND_RESEARCH
+  IMAGE_ANALYSIS
+  IMAGE_ENHANCEMENT
+  COPYWRITING
+  ANALYTICS
+  PUBLISHING
+  COMMENT_REPLY
+  AUDIENCE_GROWTH
+  BRAND_MANAGER
+  WORKFLOW_MANAGER
+  MODEL_BENCHMARK
+}
+
+// ============================================================
+// WORKFLOW & AUTOMATION
+// ============================================================
+
+model Workflow {
+  id          String          @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  trigger     WorkflowTrigger
+  triggerConfig String?       // JSON: trigger configuration
+  steps       String          // JSON: array of workflow steps
+  isActive    Boolean         @default(false)
+  lastRunAt   DateTime?
+  runCount    Int             @default(0)
+  status      WorkflowStatus  @default(DRAFT)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  executions  WorkflowExecution[]
+
+  @@map("workflows")
+}
+
+enum WorkflowTrigger {
+  MEDIA_UPLOAD
+  SCHEDULED_TIME
+  WEBHOOK
+  MANUAL
+  AI_RECOMMENDATION
+  TREND_DETECTED
+  ENGAGEMENT_THRESHOLD
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ERROR
+  ARCHIVED
+}
+
+model WorkflowExecution {
+  id          String              @id @default(cuid())
+  workflowId  String
+  status      ExecutionStatus     @default(RUNNING)
+  currentStep Int                 @default(0)
+  totalSteps  Int                 @default(0)
+  result      String?             // JSON: execution result
+  error       String?
+  startedAt   DateTime            @default(now())
+  completedAt DateTime?
+
+  workflow    Workflow            @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@map("workflow_executions")
+}
+
+enum ExecutionStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  WAITING_APPROVAL
+}
+
+// ============================================================
+// SETTINGS & CONFIGURATION
+// ============================================================
+
+model UserSettings {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  value     String   // JSON value
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@map("user_settings")
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  provider    String    // e.g., "openrouter", "openai", "google"
+  key         String    // encrypted API key
+  isActive    Boolean   @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// ============================================================
+// AUDIT & SECURITY
+// ============================================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String
+  resourceId String?
+  details   String?  // JSON
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  actionUrl String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  POST_PUBLISHED
+  POST_FAILED
+  APPROVAL_NEEDED
+  CAMPAIGN_MILESTONE
+  TREND_ALERT
+  AI_RECOMMENDATION
+  ACCOUNT_ISSUE
+  WORKFLOW_COMPLETE
+  SYSTEM
+}
+
+// ============================================================
+// SCHEDULE QUEUE
+// ============================================================
+
+model ScheduleQueue {
+  id          String   @id @default(cuid())
+  postId      String
+  accountId   String
+  scheduledAt DateTime
+  status      ScheduleStatus @default(QUEUED)
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  nextRetryAt DateTime?
+  errorMessage String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("schedule_queue")
+}
+
+enum ScheduleStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+// ============================================================
+// MODEL BENCHMARK RESULTS
+// ============================================================
+
+model ModelBenchmark {
+  id                String   @id @default(cuid())
+  model             String
+  taskType          String
+  qualityScore      Float?
+  speedMs           Int?
+  tokensUsed        Int?
+  cost              Float?
+  reasoningScore    Float?
+  creativityScore   Float?
+  marketingScore    Float?
+  hallucinationRate Float?
+  overallScore      Float?
+  testPrompt        String?
+  testResponse      String?
+  createdAt         DateTime @default(now())
+
+  @@map("model_benchmarks")
+}
