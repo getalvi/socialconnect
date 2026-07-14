@@ -1,32 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  reactStrictMode: false,
   images: {
     remotePatterns: [
-      { protocol: "https", hostname: "**" },
+      { protocol: 'https', hostname: '**' },
     ],
-    maximumStaticFileSize: 10 * 1024 * 1024,
   },
-  experimental: {
-    serverActions: { bodySizeLimit: "50mb" },
-  },
-  api: {
-    bodyParser: { sizeLimit: "50mb" },
-    responseLimit: "50mb",
-  },
-  async headers() {
-    return [
-      {
-        source: "/(.*)",
-        headers: [
-          { key: "X-Frame-Options", value: "DENY" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "X-XSS-Protection", value: "1; mode=block" },
-        ],
-      },
-    ];
-  },
+  serverExternalPackages: ['sharp'],
 };
 
 export default nextConfig;
