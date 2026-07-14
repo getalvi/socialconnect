@@ -1,39 +1,43 @@
+// ============================================================
+// SocialConnect AI - Prisma Database Schema
+// ============================================================
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// ========================
-// AUTH & USER MANAGEMENT
-// ========================
+// ---- User & Auth ----
 
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
   passwordHash  String
-  name          String?
-  avatar        String?
-  role          String    @default("user") // admin, editor, user
+  name          String
+  avatarUrl     String?
+  role          Role      @default(USER)
+  plan          Plan      @default(FREE)
   isActive      Boolean   @default(true)
-  emailVerified DateTime?
-  lastLogin     DateTime?
-
-  accounts      SocialAccount[]
-  posts         Post[]
-  media         Media[]
-  schedules    Schedule[]
-  campaigns    Campaign[]
-  apiKeys       ApiKey[]
-  aiUsageLogs   AiUsageLog[]
-  activityLogs  ActivityLog[]
-  refreshTokens RefreshToken[]
-
+  emailVerified Boolean   @default(false)
+  lastLoginAt   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  accounts          SocialAccount[]
+  refreshTokens     RefreshToken[]
+  posts             Post[]
+  mediaAssets       MediaAsset[]
+  analyticsReports  AnalyticsReport[]
+  apiUsageLogs      ApiUsageLog[]
+  scheduledJobs     ScheduledJob[]
+  notifications     Notification[]
+
+  @@map("users")
 }
 
 model RefreshToken {
@@ -43,250 +47,328 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@map("refresh_tokens")
 }
 
-model ApiKey {
-  id        String   @id @default(cuid())
-  name      String
-  key       String   @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  isActive  Boolean  @default(true)
-  lastUsed  DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// ========================
-// SOCIAL MEDIA ACCOUNTS
-// ========================
+// ---- Social Media Accounts ----
 
 model SocialAccount {
-  id              String   @id @default(cuid())
+  id              String              @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  platform        String   // facebook, instagram, twitter, linkedin, pinterest, tiktok, youtube, telegram, wordpress, shopify, threads
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform        Platform
   platformUserId  String
-  username        String?
-  displayName     String
-  avatar          String?
-  accessToken     String
-  refreshToken    String?
+  username        String
+  displayName     String?
+  avatarUrl       String?
+  accessToken     String              @db.Text
+  refreshToken    String?             @db.Text
   tokenExpiresAt  DateTime?
-  scopes          String?  // JSON array of granted scopes
-  metadata        String?  // JSON - extra platform-specific data
-  isActive        Boolean  @default(true)
-  lastSyncAt      DateTime?
+  scopes          String[]            @default([])
+  metadata        Json?
+  isActive        Boolean             @default(true)
+  lastSyncedAt    DateTime?
+  followersCount  Int                 @default(0)
+  followingCount  Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
-  posts           Post[]
-  analytics       AnalyticsSnapshot[]
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  posts Post[]
+  platformPosts PlatformPost[]
 
   @@unique([userId, platform, platformUserId])
+  @@map("social_accounts")
 }
 
-// ========================
-// MEDIA & CONTENT
-// ========================
+// ---- Media Assets ----
 
-model Media {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  filename    String
-  originalName String
-  mimeType    String
-  size        Int
-  width       Int?
-  height      Int?
-  url         String   // path to stored file
+model MediaAsset {
+  id           String          @id @default(cuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName     String
+  fileType     String
+  fileSize     Int
+  mimeType     String
+  url          String
   thumbnailUrl String?
-  alt         String?
-  metadata    String?  // JSON - EXIF, colors, etc.
-  isProcessed Boolean  @default(false)
-  analysisResult String? // JSON - AI analysis result
+  width        Int?
+  height       Int?
+  altText      String?
+  metadata     Json?
+  analysisResult Json?
+  enhancedUrl  String?
+  status       MediaStatus      @default(UPLOADED)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
-  posts       PostMedia[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  posts PostMedia[]
+
+  @@map("media_assets")
 }
+
+// ---- Posts ----
 
 model Post {
-  id              String    @id @default(cuid())
+  id              String        @id @default(cuid())
   userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title           String?
-  content         String?
-  caption         String?
-  hashtags        String?   // JSON array
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status          PostStatus    @default(DRAFT)
+  contentType     ContentType   @default(IMAGE)
+
+  // Content
+  caption         String        @default("")
+  hashtags        String[]      @default([])
   seoTitle        String?
   seoDescription  String?
-  seoKeywords     String?   // JSON array
-  status          String    @default("draft") // draft, pending_approval, approved, scheduled, published, failed
-  platform        String?   // multi or specific platform
-  publishAt       DateTime?
-  publishedAt     DateTime?
-  failedReason    String?
+  seoKeywords     String[]      @default([])
   aiModel         String?
   aiPrompt        String?
-  trendingScore   Float?
-  engagementData  String?   // JSON - likes, comments, shares, etc.
 
-  accounts        SocialAccount[]
-  media           PostMedia[]
-  schedules       Schedule[]
-  campaignId      String?
-  campaign        Campaign? @relation(fields: [campaignId], references: [id])
-  comments        PostComment[]
+  // Scheduling
+  scheduledAt     DateTime?
+  publishedAt     DateTime?
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  // Analytics
+  likesCount      Int           @default(0)
+  commentsCount   Int           @default(0)
+  sharesCount     Int           @default(0)
+  impressionsCount Int          @default(0)
+  clickThroughRate Float?       @default(0)
+  engagementRate  Float?        @default(0)
+
+  // Settings
+  isAiGenerated   Boolean       @default(false)
+  autoPublish     Boolean       @default(false)
+  publishResults  Json?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  media          PostMedia[]
+  platformPosts   PlatformPost[]
+
+  @@map("posts")
 }
 
 model PostMedia {
-  id     String @id @default(cuid())
-  postId String
-  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
-  mediaId String
-  media  Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-  order  Int    @default(0)
-  createdAt DateTime @default(now())
+  id         String     @id @default(cuid())
+  postId     String
+  post       Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  mediaId    String
+  media      MediaAsset @relation(fields: [mediaId], references: [id])
+  sortOrder  Int        @default(0)
 
   @@unique([postId, mediaId])
+  @@map("post_media")
 }
 
-model PostComment {
-  id        String   @id @default(cuid())
-  postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  content   String
-  author    String?
-  isFromAI  Boolean  @default(false)
-  createdAt DateTime @default(now())
+model PlatformPost {
+  id              String          @id @default(cuid())
+  postId          String
+  post            Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccountId String
+  socialAccount   SocialAccount   @relation(fields: [socialAccountId], references: [id])
+  platformPostId  String?
+  platformUrl     String?
+  status          PlatformPostStatus @default(PENDING)
+  errorMessage    String?
+  publishedAt     DateTime?
+  lastSyncedAt    DateTime?
+
+  @@map("platform_posts")
 }
 
-// ========================
-// SCHEDULING
-// ========================
+// ---- Scheduling ----
 
-model Schedule {
-  id          String    @id @default(cuid())
-  postId      String
-  post        Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+model ScheduledJob {
+  id          String          @id @default(cuid())
   userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  scheduledAt DateTime
-  status      String    @default("pending") // pending, processing, completed, failed
-  retryCount  Int       @default(0)
-  maxRetries  Int       @default(3)
-  lastError   String?
-  executedAt  DateTime?
-  result      String?   // JSON - publishing result
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId      String?
+  post        Post?           @relation(fields: [postId], references: [id])
+  type        JobType
+  status      JobStatus       @default(PENDING)
+  cronExpr    String?
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  errorCount  Int             @default(0)
+  lastError   String?         @db.Text
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@map("scheduled_jobs")
 }
 
-// ========================
-// AI & ANALYTICS
-// ========================
+// ---- Analytics ----
 
-model AiUsageLog {
-  id            String   @id @default(cuid())
+model AnalyticsReport {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  period          AnalyticsPeriod
+  startDate       DateTime
+  endDate         DateTime
+  totalPosts      Int       @default(0)
+  totalImpressions Int      @default(0)
+  totalEngagement Int       @default(0)
+  totalLikes      Int       @default(0)
+  totalComments   Int       @default(0)
+  totalShares     Int       @default(0)
+  avgEngagementRate Float?  @default(0)
+  topPerformingPlatform String?
+  topPerformingPostId String?
+  metrics         Json?
+  createdAt       DateTime  @default(now())
+
+  @@map("analytics_reports")
+}
+
+// ---- Trends ----
+
+model TrendTopic {
+  id          String   @id @default(cuid())
+  keyword     String
+  platform    Platform?
+  category    String?
+  score       Float    @default(0)
+  volume      Int      @default(0)
+  growthRate  Float    @default(0)
+  relatedTags String[] @default([])
+  metadata    Json?
+  discoveredAt DateTime @default(now())
+  expiresAt   DateTime?
+
+  @@map("trend_topics")
+}
+
+// ---- API Usage Tracking ----
+
+model ApiUsageLog {
+  id            String    @id @default(cuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider      String
   model         String
-  promptTokens  Int      @default(0)
-  completionTokens Int   @default(0)
-  totalTokens   Int      @default(0)
-  costUsd       Float    @default(0)
-  latencyMs     Int      @default(0)
-  requestType   String   // caption, hashtag, seo, trend, enhance, analyze
-  input         String?  // JSON - request data
-  output        String?  // JSON - response data
-  isError       Boolean  @default(false)
-  errorMessage  String?
-  createdAt     DateTime @default(now())
+  promptTokens  Int       @default(0)
+  completionTokens Int    @default(0)
+  totalTokens   Int       @default(0)
+  costUsd       Float     @default(0)
+  latencyMs     Int       @default(0)
+  status        String    @default("success")
+  errorMessage  String?   @db.Text
+  createdAt     DateTime  @default(now())
+
+  @@map("api_usage_logs")
 }
 
-model AnalyticsSnapshot {
-  id             String   @id @default(cuid())
-  accountId      String
-  account        SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  date           DateTime @default(now())
-  followers      Int      @default(0)
-  following      Int      @default(0)
-  postsCount     Int      @default(0)
-  engagementRate Float    @default(0)
-  impressions    Int      @default(0)
-  reach          Int      @default(0)
-  likes          Int      @default(0)
-  comments       Int      @default(0)
-  shares         Int      @default(0)
-  clicks         Int      @default(0)
-  saves          Int      @default(0)
-  metadata       String?  // JSON - platform-specific metrics
-  createdAt      DateTime @default(now())
-}
+// ---- Notifications ----
 
-model TrendResearch {
-  id          String   @id @default(cuid())
-  userId      String
-  query       String
-  platform    String?
-  results     String   // JSON - trend data
-  aiModel     String?
-  researchedAt DateTime @default(now())
-}
-
-// ========================
-// SYSTEM & LOGS
-// ========================
-
-model ActivityLog {
-  id        String   @id @default(cuid())
+model Notification {
+  id        String          @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  action    String   // login, logout, create_post, publish, upload, etc.
-  resource  String?
-  resourceId String?
-  metadata  String?  // JSON
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String          @db.Text
+  isRead    Boolean         @default(false)
+  metadata  Json?
+  createdAt DateTime        @default(now())
+
+  @@map("notifications")
 }
 
-model SystemConfig {
-  id    String @id @default(cuid())
-  key   String @unique
-  value String
-  type  String @default("string") // string, number, boolean, json
-  description String?
-  updatedAt DateTime @updatedAt
+// ---- Enums ----
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
 }
 
-model WebhookEvent {
-  id        String   @id @default(cuid())
-  source    String   // platform name
-  eventType String
-  payload   String   // JSON
-  processed Boolean  @default(false)
-  error     String?
-  createdAt DateTime @default(now())
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
 }
 
-model Campaign {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  description String?
-  status      String   @default("active") // active, paused, completed, archived
-  startDate   DateTime?
-  endDate     DateTime?
-  budget      Float?
-  posts       Post[]
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+enum Platform {
+  FACEBOOK
+  INSTAGRAM
+  THREADS
+  TWITTER
+  PINTEREST
+  LINKEDIN
+  TIKTOK
+  YOUTUBE
+  TELEGRAM
+  WORDPRESS
+  SHOPIFY
+}
+
+enum MediaStatus {
+  UPLOADED
+  ANALYZING
+  ANALYZED
+  ENHANCING
+  ENHANCED
+  FAILED
+}
+
+enum PostStatus {
+  DRAFT
+  AI_GENERATED
+  SCHEDULED
+  APPROVED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum ContentType {
+  IMAGE
+  VIDEO
+  CAROUSEL
+  TEXT
+  STORY
+  REEL
+}
+
+enum PlatformPostStatus {
+  PENDING
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  DELETED
+}
+
+enum JobType {
+  PUBLISH_POST
+  ANALYZE_MEDIA
+  GENERATE_CAPTION
+  GENERATE_HASHTAGS
+  SEO_OPTIMIZE
+  TREND_RESEARCH
+  SYNC_ANALYTICS
+  REFRESH_TOKEN
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AnalyticsPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
 }

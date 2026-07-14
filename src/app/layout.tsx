@@ -1,25 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { Providers } from "@/components/providers";
-import { Toaster } from "sonner";
+import { Providers } from "./providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
+  variable: "--font-sans",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
+  variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
-  title: "SocialConnect AI - AI Digital Marketing Platform",
-  description: "AI-powered digital marketing platform for social media management, content generation, and analytics.",
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
+  title: "SocialConnect AI - AI-Powered Digital Marketing Platform",
+  description: "Manage, analyze, and publish content across 11+ social media platforms with AI-powered tools",
 };
 
 export default function RootLayout({
@@ -28,14 +24,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
-      >
-        <Providers>
-          {children}
-          <Toaster position="top-right" richColors />
-        </Providers>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans bg-surface-950 text-surface-100 antialiased`}>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

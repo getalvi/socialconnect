@@ -1,86 +1,86 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role, Plan } from "@prisma/client";
+import { hash } from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-async function seed() {
-  console.log('Seeding database...');
+async function main() {
+  console.log("Seeding database...");
 
-  // Create system configs
-  const configs = [
-    { key: 'AUTO_APPROVE_POSTS', value: 'false', type: 'boolean', description: 'Automatically approve AI-generated content' },
-    { key: 'DEFAULT_AI_MODEL', value: 'google/gemini-2.0-flash-exp:free', type: 'string', description: 'Default AI model for content generation' },
-    { key: 'SCHEDULE_TIMEZONE', value: 'UTC', type: 'string', description: 'Timezone for scheduling' },
-    { key: 'MAX_DAILY_POSTS', value: '50', type: 'number', description: 'Maximum posts per day per user' },
-    { key: 'ENABLE_AUTO_PUBLISH', value: 'false', type: 'boolean', description: 'Enable automatic publishing after approval' },
-  ];
-
-  for (const config of configs) {
-    await prisma.systemConfig.upsert({
-      where: { key: config.key },
-      update: {},
-      create: config,
-    });
-  }
-
-  console.log('System configs seeded');
-
-  // Create demo user
-  const crypto = await import('crypto');
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync('demo1234', salt, 100000, 64, 'sha512').toString('hex');
-
-  const user = await prisma.user.upsert({
-    where: { email: 'demo@socialconnect.ai' },
+  // Create admin user
+  const adminPassword = await hash("Admin@123456", 12);
+  const admin = await prisma.user.upsert({
+    where: { email: "admin@socialconnect.ai" },
     update: {},
     create: {
-      email: 'demo@socialconnect.ai',
-      passwordHash: `${salt}:${hash}`,
-      name: 'Demo User',
-      role: 'admin',
+      email: "admin@socialconnect.ai",
+      passwordHash: adminPassword,
+      name: "Admin User",
+      role: Role.SUPER_ADMIN,
+      plan: Plan.ENTERPRISE,
+      emailVerified: true,
       isActive: true,
-      emailVerified: new Date(),
     },
   });
 
-  console.log(`Demo user created: ${user.email} (password: demo1234)`);
-
-  // Create sample campaign
-  const campaign = await prisma.campaign.create({
-    data: {
-      userId: user.id,
-      name: 'Q4 Marketing Push',
-      description: 'End of year marketing campaign across all platforms',
-      status: 'active',
-      startDate: new Date('2024-10-01'),
-      endDate: new Date('2024-12-31'),
-      budget: 5000,
+  // Create demo user
+  const demoPassword = await hash("Demo@123456", 12);
+  const demo = await prisma.user.upsert({
+    where: { email: "demo@socialconnect.ai" },
+    update: {},
+    create: {
+      email: "demo@socialconnect.ai",
+      passwordHash: demoPassword,
+      name: "Demo User",
+      role: Role.USER,
+      plan: Plan.PRO,
+      emailVerified: true,
+      isActive: true,
     },
   });
 
-  console.log(`Sample campaign created: ${campaign.name}`);
-
-  // Create sample posts
-  const posts = [
-    { title: 'Product Launch Announcement', content: 'We are excited to announce our latest product!', caption: 'New arrival! Check out our latest offering that will transform your daily routine.', status: 'draft', platform: 'multi', campaignId: campaign.id },
-    { title: 'Behind the Scenes', content: 'Take a look at how we create our products.', caption: 'Ever wondered what goes on behind the scenes? Here is a sneak peek into our creative process.', status: 'draft', platform: 'instagram', campaignId: campaign.id },
-    { title: 'Customer Testimonial', content: 'What our customers are saying about us.', caption: 'Our customers love us! Here is what they have to say about their experience.', status: 'published', platform: 'facebook', campaignId: campaign.id, publishedAt: new Date() },
+  // Create sample trend topics
+  const trendTopics = [
+    { keyword: "AI Marketing", platform: "TWITTER", category: "Technology", score: 95.5, volume: 45000, growthRate: 23.5, relatedTags: ["#AIMarketing", "#MarketingAI", "#DigitalMarketing"] },
+    { keyword: "Reels Strategy", platform: "INSTAGRAM", category: "Social Media", score: 88.2, volume: 32000, growthRate: 18.2, relatedTags: ["#InstagramReels", "#ReelsStrategy", "#ContentCreator"] },
+    { keyword: "Sustainable Business", platform: "LINKEDIN", category: "Business", score: 82.7, volume: 28000, growthRate: 15.8, relatedTags: ["#Sustainability", "#ESG", "#GreenBusiness"] },
+    { keyword: "Short Form Video", platform: "TIKTOK", category: "Content", score: 91.3, volume: 52000, growthRate: 28.1, relatedTags: ["#ShortFormVideo", "#TikTokTrends", "#ViralContent"] },
+    { keyword: "E-commerce Tips", platform: "SHOPIFY", category: "E-commerce", score: 76.8, volume: 18000, growthRate: 12.4, relatedTags: ["#ShopifyTips", "#Ecommerce", "#OnlineStore"] },
   ];
 
-  for (const post of posts) {
-    await prisma.post.create({
-      data: {
-        ...post,
-        userId: user.id,
-        engagementData: JSON.stringify({ likes: Math.floor(Math.random() * 100), comments: Math.floor(Math.random() * 20), shares: Math.floor(Math.random() * 10) }),
+  for (const trend of trendTopics) {
+    await prisma.trendTopic.upsert({
+      where: { id: trend.keyword.toLowerCase().replace(/\s+/g, "-") },
+      update: {},
+      create: {
+        id: trend.keyword.toLowerCase().replace(/\s+/g, "-"),
+        ...trend,
+        relatedTags: trend.relatedTags,
       },
     });
   }
 
-  console.log(`${posts.length} sample posts created`);
+  // Create sample notifications for admin
+  await prisma.notification.createMany({
+    data: [
+      { userId: admin.id, type: "SYSTEM", title: "Welcome to SocialConnect AI", message: "Your platform is set up and ready. Connect your social media accounts to get started." },
+      { userId: admin.id, type: "UPDATE", title: "New Feature: AI Trend Research", message: "AI-powered trend research is now available. Discover trending topics across all platforms." },
+      { userId: admin.id, type: "ALERT", title: "API Usage Update", message: "Your OpenRouter API key has been configured successfully. AI features are now active." },
+    ],
+    skipDuplicates: true,
+  });
 
-  console.log('Seed completed successfully!');
+  console.log("Seed data created:");
+  console.log(`  Admin: ${admin.email}`);
+  console.log(`  Demo:  ${demo.email}`);
+  console.log(`  Trends: ${trendTopics.length} topics`);
+  console.log("Seeding complete.");
 }
 
-seed()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect());
+main()
+  .catch((e) => {
+    console.error("Seed error:", e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
