@@ -1,0 +1,109 @@
+// SocialConnect AI — Frontend Prisma Schema
+// Purpose: LOCAL UI CACHE only (preferences, unsaved drafts, offline queue).
+// Source of truth is the PostgreSQL backend (see backend/schema.sql).
+// This SQLite cache lets the dashboard work fast and survive brief disconnects.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Cached user session profile (mirror of backend /me response).
+model User {
+  id        String   @id
+  email     String   @unique
+  name      String?
+  avatarUrl String?
+  role      String   @default("viewer")
+  orgId     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+/// UI preferences per user (theme, sidebar state, default view).
+model UserPreference {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  theme           String   @default("system") // light | dark | system
+  sidebarCollapsed Boolean @default(false)
+  defaultView     String   @default("dashboard")
+  defaultLanguage String   @default("en")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+/// Unsaved post drafts (synced to backend on save).
+model DraftPost {
+  id          String   @id @default(cuid())
+  userId      String
+  campaignId  String?
+  title       String?
+  caption     String   @default("")
+  hashtags    String   @default("")
+  seoTitle    String?
+  metaDescription String?
+  cta         String?
+  language    String   @default("en")
+  mediaIds    String   @default("[]") // JSON array
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("draft_posts")
+}
+
+/// Offline action queue (retry on reconnect).
+model OfflineAction {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String   // e.g. "create_post", "schedule_post"
+  payload   String   // JSON string
+  status    String   @default("pending") // pending | syncing | failed
+  retryCount Int     @default(0)
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@map("offline_actions")
+}
+
+/// Cached media metadata (blob stays in backend object storage).
+model MediaCache {
+  id            String   @id
+  organizationId String
+  filename      String
+  thumbnailUrl  String
+  fullUrl       String
+  mimeType      String
+  sizeBytes     Int
+  width         Int?
+  height        Int?
+  tags          String   @default("[]") // JSON array
+  createdAt     DateTime
+  cachedAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("media_cache")
+}
+
+/// Recently viewed (for "Recent" widget).
+model RecentItem {
+  id        String   @id @default(cuid())
+  userId    String
+  itemType  String   // campaign | post | media
+  itemId    String
+  title     String
+  viewedAt  DateTime @default(now())
+
+  @@index([userId, viewedAt])
+  @@map("recent_items")
+}
