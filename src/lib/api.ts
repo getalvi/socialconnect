@@ -16,22 +16,56 @@ export function isLoggedIn(): boolean {
   return !!getToken();
 }
 
+// Parses a response body as JSON only if the server actually says it's JSON.
+// Before this, `res.json()` was called unconditionally - if the backend (or
+// something in front of it, like a platform's own error page) ever returned
+// HTML or plain text, the browser's JSON.parse would throw a raw
+// "Unexpected token '<', "<!doctype "... is not valid JSON" (or similar)
+// with no indication of what actually went wrong. This surfaces a clear,
+// readable error instead, and never crashes on a non-JSON body.
+async function parseResponseBody(res: Response): Promise<any> {
+  const contentType = res.headers.get("content-type") || "";
+  const text = await res.text();
+  if (!text) return null;
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `Expected JSON from ${res.url} but got "${contentType || "unknown content-type"}". ` +
+      `This usually means the backend URL is wrong, the backend is down, or a proxy/host returned ` +
+      `an error page instead of the API response. Raw response (truncated): ${text.slice(0, 200)}`
+    );
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Backend returned invalid JSON from ${res.url}: ${text.slice(0, 200)}`);
+  }
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch (err: any) {
+    // fetch() itself throws (network error, CORS block, DNS failure, backend
+    // completely unreachable) before any response exists at all - distinct
+    // from an HTTP error status, and worth a clearer message than the
+    // browser's generic "Failed to fetch".
+    throw new Error(`Could not reach ${API_URL}${path} - check VITE_API_URL and that the backend is running. (${err.message})`);
+  }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
+    const body = await parseResponseBody(res).catch(() => ({}));
     throw new Error(body.error ? JSON.stringify(body.error) : `Request failed: ${res.status}`);
   }
   if (res.status === 204) return null;
-  return res.json();
+  return parseResponseBody(res);
 }
 
 export const api = {
