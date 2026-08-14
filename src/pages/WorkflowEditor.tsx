@@ -140,9 +140,43 @@ export default function WorkflowEditorPage() {
     }
   }
 
+  // Clears any status badge/border from a previous run and marks every node
+  // "running" for the duration of this one. We can't get true per-node
+  // progress mid-run (the backend only reports a final result, no
+  // streaming), so "running" is shown for the whole graph until the poll
+  // resolves - then applyExecutionToNodes paints the real per-node outcome.
+  function markAllNodesRunning() {
+    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, execStatus: "running", execError: undefined, execDurationMs: undefined } })));
+  }
+
+  // Paints the real per-node result from nodeLogs onto the canvas: a node
+  // that appears in nodeLogs gets its actual success/error status (plus the
+  // error message / duration for the node's tooltip and small status line in
+  // GenericNode.tsx); a node that never appears in nodeLogs was on a branch
+  // that wasn't taken (the If node's untaken output is `undefined`, so the
+  // executor never queues that branch's nodes at all - see executor.ts) and
+  // is shown as "skipped" instead of left looking identical to a real run.
+  function applyExecutionToNodes(execution: any) {
+    const logsByNodeId = new Map((execution.nodeLogs || []).map((l: any) => [l.nodeId, l]));
+    setNodes((nds) =>
+      nds.map((n) => {
+        const log = logsByNodeId.get(n.id) as any;
+        if (log) {
+          return { ...n, data: { ...n.data, execStatus: log.status, execError: log.error, execDurationMs: log.durationMs } };
+        }
+        // Not every "didn't run" case is a skipped branch (e.g. the run could
+        // have failed before reaching this node at all), but skipped-branch
+        // is by far the common case and "not part of this run's outcome" is
+        // accurate either way - a plain dim badge, not a false success/error.
+        return { ...n, data: { ...n.data, execStatus: "skipped", execError: undefined, execDurationMs: undefined } };
+      })
+    );
+  }
+
   async function handleRun() {
     setRunning(true);
     setLastExecution(null);
+    markAllNodesRunning();
     try {
       await handleSave(); // ensure latest graph is saved before running
       const { executionId } = await api.runWorkflow(workflowId, {});
@@ -152,6 +186,7 @@ export default function WorkflowEditorPage() {
         const exec = await api.getExecution(executionId);
         if (exec.status !== "running") {
           setLastExecution(exec);
+          applyExecutionToNodes(exec);
           break;
         }
       }

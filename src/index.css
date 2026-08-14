@@ -86,3 +86,9 @@ label {
   border-radius: var(--radius);
   padding: 20px;
 }
+
+/* Used by GenericNode.tsx for the "running" execution-status badge during Test Run */
+@keyframes flowai-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
